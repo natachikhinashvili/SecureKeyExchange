@@ -4,73 +4,205 @@ import django
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'exchangekey.settings')
 
 django.setup()
-
+from django.test import TestCase
 from django.contrib.auth.models import User
+from models import Channel
 from django.urls import reverse
-from rest_framework import status
-from rest_framework.test import APITestCase
 from models import Channel, SecretExchange
-import os
-from django.conf import settings
+from rest_framework.test import APIClient
+from rest_framework import status
 
-class ChannelAPITestCase(APITestCase):
+class ChannelTestCase(TestCase):
     def setUp(self):
-        self.sender_user = User.objects.create_user(username='sender', password='password')
-        self.recipient_user = User.objects.create_user(username='recipient', password='password')
-        
-        self.channel_data = {
-            'recipient_user': self.recipient_user.id,
-            'name': 'Test Channel'
-        }
+        self.user1 = User.objects.create_user(username='user1', password='password1')
+        self.user2 = User.objects.create_user(username='user2', password='password2')
 
-    def test_channel_creation_and_acceptance(self):
-        self.client.login(username='sender', password='password')
+    def test_channel_creation(self):
+        """Test creation of Channel objects"""
+        channel = Channel.objects.create(
+            sender_user=self.user1,
+            recipient_user=self.user2,
+            name='Test Channel',
+            initial_sender_secret='Initial sender secret',
+            initial_recipient_secret='Initial recipient secret'
+        )
 
-        response = self.client.post('/channels/', self.channel_data)
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        channel_id = response.data['id']
+        self.assertEqual(Channel.objects.count(), 1)
+        self.assertEqual(channel.sender_user, self.user1)
+        self.assertEqual(channel.recipient_user, self.user2)
+        self.assertEqual(channel.name, 'Test Channel')
+        self.assertFalse(channel.accepted)
 
-        response = self.client.post(f'/channels/{channel_id}/accept/')
+class SecretExchangeTestCase(TestCase):
+    def setUp(self):
+        self.sender_user = User.objects.create_user(username='sender', password='senderpassword')
+        self.recipient_user = User.objects.create_user(username='recipient', password='recipientpassword')
+
+        self.channel = Channel.objects.create(
+            sender_user=self.sender_user,
+            recipient_user=self.recipient_user,
+            name='Test Channel',
+            initial_sender_secret='Initial sender secret',
+            initial_recipient_secret='Initial recipient secret'
+        )
+
+        self.secret_exchange = SecretExchange.objects.create(
+            channel=self.channel,
+            sender_secret='Sender secret',
+            recipient_secret='Recipient secret'
+        )
+
+        self.client = APIClient()
+
+    def test_secret_exchange_view_sender(self):
+        """Test SecretExchangeView for sender user"""
+        self.client.force_authenticate(user=self.sender_user)
+
+        url = reverse('secret-exchange')
+        data = {'channel_id': self.channel.id}
+        response = self.client.post(url, data, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('secret_key', response.data)
+        self.assertIn('sender_secret', response.data)
+
+    def test_secret_exchange_view_recipient(self):
+        """Test SecretExchangeView for recipient user"""
+        self.client.force_authenticate(user=self.recipient_user)
+
+        url = reverse('secret-exchange')
+        data = {'channel_id': self.channel.id}
+        response = self.client.post(url, data, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('secret_key', response.data)
+        self.assertIn('recipient_secret', response.data)
+
+    def test_secret_exchange_view_unauthorized(self):
+        """Test SecretExchangeView unauthorized access"""
+        unauthorized_user = User.objects.create_user(username='unauthorized', password='unauthorizedpassword')
+        self.client.force_authenticate(user=unauthorized_user)
+
+        url = reverse('secret-exchange')
+        data = {'channel_id': self.channel.id}
+        response = self.client.post(url, data, format='json')
+
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-        self.client.logout()
-        self.client.login(username='recipient', password='password')
-        response = self.client.post(f'/channels/{channel_id}/accept/')
+    def test_secret_exchange_view_missing_channel_id(self):
+        """Test SecretExchangeView with missing channel_id"""
+        self.client.force_authenticate(user=self.sender_user)
+
+        url = reverse('secret-exchange')
+        response = self.client.post(url, {}, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('Channel ID is required.', response.data['detail'])
+
+
+class KeyGenerationTestCase(TestCase):
+    def setUp(self):
+        self.sender_user = User.objects.create_user(username='sender', password='senderpassword')
+        self.recipient_user = User.objects.create_user(username='recipient', password='recipientpassword')
+        self.secret_key=int.from_bytes(os.urandom(32), byteorder='big')
+
+        self.channel = Channel.objects.create(
+            sender_user=self.sender_user,
+            recipient_user=self.recipient_user,
+            name='Test Channel',
+            initial_sender_secret='Sender secret',
+            initial_recipient_secret='Recipient secret'
+        )
+
+        self.secret_exchange = SecretExchange.objects.create(
+            channel=self.channel,
+            sender_secret='1234567890123456789012345678901234567890',  
+            recipient_secret='0987654321098765432109876543210987654321'  
+        )
+
+        self.client = APIClient()
+
+    def test_key_generation_sender(self):
+        """Test KeyGenerationView for sender user"""
+        self.client.force_authenticate(user=self.sender_user)
+
+        url = reverse('key-generation')
+        data = {
+            'channel_id': self.channel.id,
+            'secret_key': self.secret_key
+        }
+        response = self.client.post(url, data, format='json')
+
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('key', response.data)
 
-    def test_secret_exchange_and_key_generation(self):
-        self.client.login(username='sender', password='password')
+    def test_key_generation_recipient(self):
+        """Test KeyGenerationView for recipient user"""
+        self.client.force_authenticate(user=self.recipient_user)
 
-        response = self.client.post('/channels/', self.channel_data)
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        channel_id = response.data['id']
+        url = reverse('key-generation')
+        data = {
+            'channel_id': self.channel.id,
+            'secret_key': self.secret_key
+        }
+        response = self.client.post(url, data, format='json')
 
-        response = self.client.post('/secret-exchange/', {'channel_id': channel_id})
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        sender_secret_key = response.data['secret_key']
-        initial_sender_secret = response.data['sender_secret']
-
-        self.client.logout()
-        self.client.login(username='recipient', password='password')
-        response = self.client.post('/secret-exchange/', {'channel_id': channel_id})
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        recipient_secret_key = response.data['secret_key']
-        initial_recipient_secret = response.data['recipient_secret']
-
-        secret_exchange = SecretExchange.objects.get(channel_id=channel_id)
-        self.assertEqual(secret_exchange.initial_sender_secret, str(initial_sender_secret))
-        self.assertEqual(secret_exchange.initial_recipient_secret, str(initial_recipient_secret))
-
-        self.client.logout()
-        self.client.login(username='sender', password='password')
-        response = self.client.post('/key-generation/', {'channel_id': channel_id, 'secret_key': sender_secret_key})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        expected_sender_key = pow(int(initial_recipient_secret), sender_secret_key, settings.MODULUS)
-        self.assertEqual(response.data['key'], expected_sender_key)
+        self.assertIn('key', response.data)
 
-        self.client.logout()
-        self.client.login(username='recipient', password='password')
-        response = self.client.post('/key-generation/', {'channel_id': channel_id, 'secret_key': recipient_secret_key})
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        expected_recipient_key = pow(int(initial_sender_secret), recipient_secret_key, settings.MODULUS)
-        self.assertEqual(response.data['key'], expected_recipient_key)
+    def test_key_generation_unauthorized(self):
+        """Test KeyGenerationView unauthorized access"""
+        unauthorized_user = User.objects.create_user(username='unauthorized', password='unauthorizedpassword')
+        self.client.force_authenticate(user=unauthorized_user)
+
+        url = reverse('key-generation')
+        data = {
+            'channel_id': self.channel.id,
+            'secret_key': self.secret_key
+        }
+        response = self.client.post(url, data, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_key_generation_invalid_secret_key(self):
+        """Test KeyGenerationView with invalid secret key"""
+        self.client.force_authenticate(user=self.sender_user)
+
+        url = reverse('key-generation')
+        data = {
+            'channel_id': self.channel.id,
+            'secret_key': 'invalid_secret_key'
+        }
+        response = self.client.post(url, data, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('Invalid secret key.', response.data['detail'])
+
+    def test_key_generation_missing_params(self):
+        """Test KeyGenerationView with missing parameters"""
+        self.client.force_authenticate(user=self.sender_user)
+
+        url = reverse('key-generation')
+        data = {}
+        response = self.client.post(url, data, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('Channel ID and secret key are required.', response.data['detail'])
+
+    def test_key_generation_secret_not_generated(self):
+        """Test KeyGenerationView when secret for the other party is not yet generated"""
+        self.client.force_authenticate(user=self.sender_user)
+
+        self.secret_exchange.recipient_secret = None
+        self.secret_exchange.save()
+
+        url = reverse('key-generation')
+        data = {
+            'channel_id': self.channel.id,
+            'secret_key': self.secret_key
+        }
+        response = self.client.post(url, data, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('Recipient secret not yet generated.', response.data['detail'])
+

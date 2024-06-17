@@ -18,7 +18,7 @@ class SecretExchange(models.Model):
     class Meta:
         app_label = 'exchangekey'
     channel = models.OneToOneField(Channel, on_delete=models.CASCADE)
-    sender_secret = models.CharField(max_length=512)  # Storing large secrets
+    sender_secret = models.CharField(max_length=512)
     recipient_secret = models.CharField(max_length=512, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
