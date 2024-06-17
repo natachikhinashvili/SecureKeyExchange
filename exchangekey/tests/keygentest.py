@@ -6,9 +6,9 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'exchangekey.settings')
 django.setup()
 from django.test import TestCase
 from django.contrib.auth.models import User
-from models import Channel
+from models.channel import Channel
 from django.urls import reverse
-from models import Channel, SecretExchange
+from models.secretexchange import SecretExchange
 from rest_framework.test import APIClient
 from rest_framework import status
 
@@ -17,6 +17,7 @@ class KeyGenerationTestCase(TestCase):
         self.sender_user = User.objects.create_user(username='sender', password='senderpassword')
         self.recipient_user = User.objects.create_user(username='recipient', password='recipientpassword')
         self.secret_key=int.from_bytes(os.urandom(32), byteorder='big')
+        self.recipient_key=int.from_bytes(os.urandom(32), byteorder='big')
 
         self.channel = Channel.objects.create(
             sender_user=self.sender_user,
@@ -28,8 +29,8 @@ class KeyGenerationTestCase(TestCase):
 
         self.secret_exchange = SecretExchange.objects.create(
             channel=self.channel,
-            sender_secret='1234567890123456789012345678901234567890',  
-            recipient_secret='0987654321098765432109876543210987654321'  
+            sender_secret=self.secret_key,  
+            recipient_secret=self.recipient_key 
         )
 
         self.client = APIClient()

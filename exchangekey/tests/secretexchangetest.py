@@ -6,9 +6,9 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'exchangekey.settings')
 django.setup()
 from django.test import TestCase
 from django.contrib.auth.models import User
-from models import Channel
+from models.channel import Channel
 from django.urls import reverse
-from models import Channel, SecretExchange
+from models.secretexchange import SecretExchange
 from rest_framework.test import APIClient
 from rest_framework import status
 

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from models import SecretExchange
+from models.secretexchange import SecretExchange
 
 class SecretExchangeSerializer(serializers.ModelSerializer):
     class Meta:

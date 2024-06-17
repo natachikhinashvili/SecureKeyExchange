@@ -18,11 +18,13 @@ from django.contrib import admin
 from django.urls import path
 from views.secretexchangeview import SecretExchangeView
 from views.keygenerationview import KeyGenerationView
+from channelviewset import ChannelViewSet
+from django.urls import path, include
 
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    path("list_channels/", ChannelViewSet.as_view({'get': 'list'}), name='list_channels'),
     path('secret-exchange/', SecretExchangeView.as_view(), name='secret-exchange'),
     path('key-generation/', KeyGenerationView.as_view(), name='key-generation'),
-
 ]

@@ -4,8 +4,8 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
-from models import Channel, SecretExchange
-from serializers import SecretExchangeSerializer
+from models.channel import Channel
+from models.secretexchange import SecretExchange
 
 class SecretExchangeView(APIView):
     def post(self, request, *args, **kwargs):
