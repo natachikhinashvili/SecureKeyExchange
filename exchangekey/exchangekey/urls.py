@@ -16,8 +16,8 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path
-from secretexchangeview import SecretExchangeView
-from keygenerationview import KeyGenerationView
+from views.secretexchangeview import SecretExchangeView
+from views.keygenerationview import KeyGenerationView
 
 
 urlpatterns = [
